@@ -98,11 +98,14 @@ stations = temp_df["name"].unique()
 temp_readings = []
 temp_estimates = []
 
+# In here we iterate through temperature data and link the stations to closest cities,
+# then when the date changes to a new day, we estimate the temperature for all other cities
+# in the population data.
 for index, temp_row in temp_df.iterrows():
     
-    if (last_date != temp_row["location_date"]):
+    if (last_date != temp_row["location_date"]): # when its a new day we need to estimate the cities without temperature readings
         
-        for index, pop_row in pop_df.iterrows():
+        for index, pop_row in pop_df.iterrows(): # go through all the cities in population data to estimate their temp readings
             
             # If reading already taken skip estimation
             reading_already_done = False
@@ -114,6 +117,7 @@ for index, temp_row in temp_df.iterrows():
             
             temp_estimates = add_estimated_temp_row(temp_estimates, temp_readings, last_date, pop_row, total_pop)
         
+        # add our new readings for the day to the dataframe being created and reset variables for next day
         new_df = new_df.append(temp_readings)
         new_df = new_df.append(temp_estimates)
         temp_readings = []
@@ -123,10 +127,11 @@ for index, temp_row in temp_df.iterrows():
     name = temp_row["name"]
     pop_row = None
     
+    # link our sensors to their closest cities
     if (name == "Raleigh/Durham"):
         pop_row = pop_df[(pop_df["City"] == "Raleigh")]
     
-    if (name == "Richmond"):
+    if (name == "Richmond"): # two richmonds, need to specifiy this is the Virginia one
         pop_row = pop_df[(pop_df["City"] == "Richmond") & (pop_df["State"] == "Virginia")]
     
     if (name == "Albany"):
@@ -141,14 +146,14 @@ for index, temp_row in temp_df.iterrows():
     if (name in closest_city and pop_row is None):
         pop_row = pop_df[pop_df["City"].str.match(closest_city[name])]
     elif(pop_row is None):
-        pop_row = pop_df[pop_df["City"].str.match(name)]
+        pop_row = pop_df[pop_df["City"].str.match(name)] # These are cities which have perfect matches in the pop data
     
     if (pop_row is None):
         raise Exception("Unknown City")
     
     temp_readings = add_known_temp_row(temp_readings, temp_row, pop_row, total_pop)
     
-    if (name == "Raleigh/Durham"):
+    if (name == "Raleigh/Durham"): # add the additional entry for raleigh/durham
         pop_row = pop_df[(pop_df["City"] == "Durham")]
         temp_readings = add_known_temp_row(temp_readings, temp_row, pop_row, total_pop)
         
@@ -172,9 +177,11 @@ means = [0, 0, 0]
 _min = 0
 _max = 0
 
+# Here we average all the cities weighted temeperature to create the daily timeseries for the entire US 
 for index, row in df.iterrows():
     current_date = datetime.strptime(row["Date"], '%m/%d/%Y')
-        
+       
+    # if theres a new date then lets add the new daily temperature for the entire US to our timeseries
     if (last_date != current_date):
         
         # If we have a missing day we want to hold the previous days temp, wait to calculate the next days temp, then average out these two days
@@ -193,17 +200,16 @@ for index, row in df.iterrows():
             last_date = current_date
             continue
         
-        #print (washington)
         arrays = [np.array(x) for x in washington]
         washington_temp_average = [np.mean(k) for k in zip(*arrays)]
-        #print (washington_temp_average)
         means[0] += washington_temp_average[0]
         means[1] += washington_temp_average[1]
         means[2] += washington_temp_average[2]
         
         timeseries_df = timeseries_df.append( [{"Date":last_date, "Mean Temp C":means[0], "Mean Min Temp C":means[1], "Mean Max Temp C":means[2], "Abs Min Temp C":_min, "Abs Max Temp C":_max, "Projected":False}] )
         
-        # just holding the previous days average in case we need it for a missing day
+        # just holding the previous days average for when we need it for a missing day
+        # resetting our variables for a new day
         previous_day_temp[0] = means[0]
         previous_day_temp[1] = means[1]
         previous_day_temp[2] = means[2]
@@ -215,10 +221,11 @@ for index, row in df.iterrows():
         last_date = current_date
         cities_recorded_today = 0
         continue
-
+    
+    # sum the weighted averages for the day
     weight = row["Weighted Pop"]
     cities_recorded_today += 1
-    if (row["City/State"] == "Washington/District of Columbia"):
+    if (row["City/State"] == "Washington/District of Columbia"): # we now deal with the washington problem where there are two entries
         washington.append([row["Mean"] * weight, row["Min"] * weight, row["Max"] * weight])
     
     means[0] += row["Mean"] * weight
